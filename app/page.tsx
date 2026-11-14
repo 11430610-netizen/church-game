@@ -177,6 +177,7 @@ function ParticipantCard({
 
 export default function HomePage() {
   const [view, setView] = useState<"home" | "initiator" | "participant" | "results">("home");
+  const [selectedRole, setSelectedRole] = useState<"initiator" | "participant" | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [nicknameInput, setNicknameInput] = useState("");
   const [participantId, setParticipantId] = useState("");
@@ -184,6 +185,53 @@ export default function HomePage() {
   const [initiatorName, setInitiatorName] = useState("發起人");
   const [showAnswers, setShowAnswers] = useState(false);
   const [alert, setAlert] = useState("");
+
+  const roleSelectScreen = () => (
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#eff6ff,_#f8fafc_45%,_#eef2ff_100%)] px-4 py-10 text-slate-800">
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-8 rounded-3xl border border-sky-100 bg-white/80 p-8 shadow-xl backdrop-blur-sm">
+          <p className="text-sm font-medium uppercase tracking-[0.26em] text-sky-700">團契互動遊戲</p>
+          <h1 className="mt-4 text-4xl font-black text-slate-900">磐石自介</h1>
+          <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
+            請先選擇你的身份，發起人可建立遊戲並控制開始，玩家則直接加入並開始作答。
+          </p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedRole("initiator");
+              setView("initiator");
+            }}
+            className="rounded-3xl bg-sky-600 p-6 text-left text-white shadow-lg transition hover:bg-sky-700"
+          >
+            <div className="text-sm font-medium uppercase tracking-[0.2em] text-sky-100">發起人</div>
+            <div className="mt-4 text-2xl font-bold">建立遊戲</div>
+            <p className="mt-3 text-sm text-sky-100">輸入暱稱、填寫自己的答案，並按開始讓所有人一起作答。</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedRole("participant");
+              setView("participant");
+            }}
+            className="rounded-3xl bg-violet-600 p-6 text-left text-white shadow-lg transition hover:bg-violet-700"
+          >
+            <div className="text-sm font-medium uppercase tracking-[0.2em] text-violet-100">玩家</div>
+            <div className="mt-4 text-2xl font-bold">加入作答</div>
+            <p className="mt-3 text-sm text-violet-100">輸入自訂暱稱，加入發起人分享的連結後開始作答。</p>
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+
+  const revealParticipantsAnswers = () => {
+    if (!session) return false;
+    return session.participants.length > 0 && session.participants.every((p) => (p.answers[session.currentQuestionIndex ?? 0] ?? "").trim() !== "");
+  };
 
   const leaderBoard = useMemo(() => {
     if (!session) return [];
@@ -296,11 +344,73 @@ export default function HomePage() {
     const nextSession: Session = {
       ...session,
       hasStarted: true,
+      currentQuestionIndex: 0,
     };
 
     setSession(nextSession);
     saveSession(nextSession);
-    setAlert("已開始問答，請讓參與者開始作答。 ");
+    setShowAnswers(false);
+    setAlert("已開始問答，請讓所有玩家開始作答。 ");
+  };
+
+  const advanceToNextQuestion = () => {
+    if (!session) return;
+    const nextIndex = (session.currentQuestionIndex ?? 0) + 1;
+    if (nextIndex >= questions.length) {
+      const finished = { ...session, currentQuestionIndex: questions.length - 1 };
+      setSession(finished);
+      saveSession(finished);
+      setView("results");
+      setShowAnswers(false);
+      return;
+    }
+
+    const nextSession = { ...session, currentQuestionIndex: nextIndex, hasStarted: true };
+    setSession(nextSession);
+    saveSession(nextSession);
+    setShowAnswers(false);
+    setAlert("所有人已作答，現在進入下一題。 ");
+  };
+
+  const revealRoundAnswers = () => {
+    if (!session) return;
+    setShowAnswers(true);
+    setAlert("所有玩家已完成作答，現在可一起觀看答案。 ");
+  };
+
+  const allAnsweredCurrent = () => {
+    if (!session) return false;
+    const idx = session.currentQuestionIndex ?? 0;
+    return session.participants.length > 0 && session.participants.every((p) => (p.answers[idx] ?? "").trim() !== "");
+  };
+
+  const openResults = () => {
+    if (!session) return;
+    if (!getAllParticipantsCompleted()) {
+      setAlert("請等所有參與者都完成作答後再查看成績。 ");
+      return;
+    }
+    setView("results");
+    setSelectedParticipantId(session.participants[0]?.id ?? "");
+    setAlert("");
+  };
+
+  const updateSessionForParticipant = (nextSession: Session) => {
+    setSession(nextSession);
+    saveSession(nextSession);
+    window.localStorage.setItem("church-game-current-session", nextSession.sessionId);
+  };
+
+  const copyShareLink = async () => {
+    if (!session) return;
+
+    const shareUrl = buildShareUrl(session.sessionId, session);
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setAlert("分享連結已複製，直接傳給玩家即可。");
+    } catch {
+      setAlert("複製失敗，請手動複製下方連結。 ");
+    }
   };
 
   const joinParticipantFromLink = () => {
@@ -329,84 +439,6 @@ export default function HomePage() {
     setSelectedParticipantId(nextId);
     setNicknameInput("");
     setAlert("已加入，等待發起人開始問答。 ");
-  };
-
-  const copyShareLink = async () => {
-    if (!session) return;
-
-    const shareUrl = buildShareUrl(session.sessionId, session);
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setAlert("分享連結已複製，直接傳給作答者即可。");
-    } catch {
-      setAlert("複製失敗，請手動複製下方連結。 ");
-    }
-  };
-
-  const allAnsweredCurrent = () => {
-    if (!session) return false;
-    const idx = session.currentQuestionIndex ?? 0;
-    return session.participants.length > 0 && session.participants.every((p) => (p.answers[idx] ?? "").trim() !== "");
-  };
-
-  const advanceToNextQuestion = () => {
-    if (!session) return;
-    const nextIndex = (session.currentQuestionIndex ?? 0) + 1;
-    if (nextIndex >= questions.length) {
-      const finished = { ...session, currentQuestionIndex: questions.length - 1 };
-      setSession(finished);
-      saveSession(finished);
-      setView("results");
-      setShowAnswers(false);
-      return;
-    }
-
-    const nextSession = { ...session, currentQuestionIndex: nextIndex };
-    setSession(nextSession);
-    saveSession(nextSession);
-    setShowAnswers(false);
-  };
-
-  const updateInitiatorAnswer = (questionIndex: number, value: string) => {
-    setSession((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        initiatorAnswers: prev.initiatorAnswers.map((answer, index) =>
-          index === questionIndex ? value : answer,
-        ),
-      };
-    });
-  };
-
-  const updateSessionForParticipant = (nextSession: Session) => {
-    setSession(nextSession);
-    saveSession(nextSession);
-    window.localStorage.setItem("church-game-current-session", nextSession.sessionId);
-  };
-
-  const handleJoinSession = () => {
-    // join via sessionId from URL
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const sid = params.get("sessionId");
-      if (!sid) {
-        setAlert("請使用發起人分享的連結來加入遊戲。");
-        return;
-      }
-
-      const existing = loadSession(sid);
-      if (!existing) {
-        setAlert("在此裝置找不到會話資料（localStorage），請讓發起人在此裝置上先建立會話或使用雲端同步方案。要我幫忙設定雲端同步或 ngrok 嗎？");
-        return;
-      }
-
-      setSession(existing);
-      setView("participant");
-      setAlert("");
-    } catch (e) {
-      setAlert("加入時發生錯誤，請稍後再試。");
-    }
   };
 
   const updateParticipantName = (participantIdToUpdate: string, newName: string) => {
@@ -449,6 +481,18 @@ export default function HomePage() {
     setAlert("");
   };
 
+  const updateInitiatorAnswer = (questionIndex: number, value: string) => {
+    setSession((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        initiatorAnswers: prev.initiatorAnswers.map((answer, index) =>
+          index === questionIndex ? value : answer,
+        ),
+      };
+    });
+  };
+
   const updateParticipantAnswer = (index: number, value: string) => {
     if (!session || !participantId) return;
 
@@ -472,31 +516,18 @@ export default function HomePage() {
   const submitParticipantAnswers = () => {
     if (!session || !participantId) return;
 
-    // answers are saved on change; here we just notify user and keep them on participant view
     const nextSession = { ...session };
     updateSessionForParticipant(nextSession);
-    setAlert("本題答案已提交，請等待其他參與者。\n發起人確認後會進入下一題。");
+    setAlert("本題答案已提交，請等待其他玩家。發起人確認後會進入下一題。 ");
     setSelectedParticipantId(participantId);
   };
 
   const getAllParticipantsCompleted = () => {
     if (!session) return false;
-    // consider a participant completed when they have answered all questions
     return (
       session.participants.length > 0 &&
       session.participants.every((participant) => participant.answers.every((a) => (a ?? "").trim() !== ""))
     );
-  };
-
-  const openResults = () => {
-    if (!session) return;
-    if (!getAllParticipantsCompleted()) {
-      setAlert("請等所有參與者都完成作答後再查看成績。 ");
-      return;
-    }
-    setView("results");
-    setSelectedParticipantId(session.participants[0]?.id ?? "");
-    setAlert("");
   };
 
   const renderQuestionInputs = (
@@ -671,7 +702,7 @@ export default function HomePage() {
         <main className="mx-auto max-w-3xl px-4 py-12">
           <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-lg">
             <h2 className="text-2xl font-bold text-slate-900">建立團契遊戲</h2>
-            <p className="mt-3 text-sm text-slate-600">先輸入你的暱稱，然後開始填寫 {questions.length} 題自我介紹內容。</p>
+            <p className="mt-3 text-sm text-slate-600">先輸入你的暱稱，之後按開始即可直接進入問答。</p>
             <input
               value={initiatorName}
               onChange={(event) => setInitiatorName(event.target.value)}
@@ -716,21 +747,14 @@ export default function HomePage() {
         <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-800">已加入的作答者</h3>
-              <p className="text-sm text-slate-500">可在此編輯作答者暱稱。</p>
+              <h3 className="text-lg font-semibold text-slate-800">已加入的玩家</h3>
+              <p className="text-sm text-slate-500">所有玩家都可自訂暱稱，發起人也可在此編輯。</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setAlert("請先加入作答者。")}
-              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-            >
-              加入作答者
-            </button>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {session.participants.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                目前還沒有作答者加入。
+                還沒有人加入，請將連結分享給玩家。
               </div>
             ) : (
               session.participants.map((participant) => (
@@ -747,14 +771,14 @@ export default function HomePage() {
               value={nicknameInput}
               onChange={(event) => setNicknameInput(event.target.value)}
               className="flex-1 rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-sky-500"
-              placeholder="輸入作答者暱稱"
+              placeholder="輸入玩家暱稱"
             />
             <button
               type="button"
               onClick={handleAddParticipant}
               className="rounded-xl bg-sky-600 px-4 py-3 text-sm font-medium text-white"
             >
-              新增作答者
+              新增玩家
             </button>
           </div>
         </div>
@@ -784,11 +808,11 @@ export default function HomePage() {
             </button>
             <button
               type="button"
-              onClick={() => setShowAnswers(true)}
+              onClick={revealRoundAnswers}
               disabled={!allAnsweredCurrent()}
               className="rounded-xl bg-sky-600 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              查看本題答案
+              看所有人答案
             </button>
             <button
               type="button"
@@ -802,7 +826,7 @@ export default function HomePage() {
         </div>
         {showAnswers && session ? (
           <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-800">本題所有作答</h3>
+            <h3 className="text-lg font-semibold text-slate-800">本題所有答案</h3>
             <div className="mt-4 space-y-3">
               {buildRoundReviewData(session).map((item) => (
                 <div key={item.id} className="rounded-xl border border-slate-100 p-3">
@@ -840,7 +864,7 @@ export default function HomePage() {
           <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-lg">
             <p className="text-sm font-medium uppercase tracking-[0.2em] text-sky-700">加入作答</p>
             <h2 className="mt-3 text-3xl font-bold text-slate-900">輸入你的暱稱</h2>
-            <p className="mt-3 text-sm text-slate-600">點開連結後直接輸入暱稱，即可加入本次團契問答。</p>
+            <p className="mt-3 text-sm text-slate-600">每位玩家可自訂暱稱，進入後直接開始作答。</p>
             <input
               value={nicknameInput}
               onChange={(event) => setNicknameInput(event.target.value)}
