@@ -176,7 +176,7 @@ function ParticipantCard({
 }
 
 export default function HomePage() {
-  const [view, setView] = useState<"role" | "initiator" | "participant" | "results">("role");
+  const [view, setView] = useState<"role" | "initiator" | "participant" | "results" | "submission">("role");
   const [selectedRole, setSelectedRole] = useState<"initiator" | "participant" | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [nicknameInput, setNicknameInput] = useState("");
@@ -391,6 +391,14 @@ export default function HomePage() {
     return session.participants.length > 0 && session.participants.every((p) => (p.answers[idx] ?? "").trim() !== "");
   };
 
+  const getAllParticipantsCompleted = () => {
+    if (!session) return false;
+    return (
+      session.participants.length > 0 &&
+      session.participants.every(participant => participant.answers.every(answer => (answer ?? "").trim() !== ""))
+    );
+  };
+
   const openResults = () => {
     if (!session) return;
     if (!getAllParticipantsCompleted()) {
@@ -527,13 +535,41 @@ export default function HomePage() {
     updateSessionForParticipant(nextSession);
     setAlert("本題答案已提交，請等待其他玩家。發起人確認後會進入下一題。 ");
     setSelectedParticipantId(participantId);
+    setView("submission");
   };
 
-  const getAllParticipantsCompleted = () => {
-    if (!session) return false;
+  const renderSubmissionReview = () => {
+    if (!session) return null;
+
     return (
-      session.participants.length > 0 &&
-      session.participants.every((participant) => participant.answers.every((a) => (a ?? "").trim() !== ""))
+      <main className="mx-auto max-w-5xl px-4 py-8 text-slate-800">
+        <div className="mb-6 rounded-3xl bg-slate-900 p-6 text-white shadow-lg">
+          <p className="text-sm uppercase tracking-[0.2em] text-slate-300">本題答案總覽</p>
+          <h2 className="mt-3 text-3xl font-bold">{currentTarget?.name || "作答者"}</h2>
+        </div>
+
+        <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          {buildRoundReviewData(session).map((item) => (
+            <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-medium text-slate-700">{item.name}</div>
+                <div className="text-sm text-slate-500">{item.answer ? "已作答" : "未作答"}</div>
+              </div>
+              <div className="mt-2 text-sm text-slate-700">{item.answer || "(未填寫)"}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setView("participant")}
+            className="rounded-xl bg-sky-600 px-4 py-3 text-sm font-medium text-white"
+          >
+            返回作答頁
+          </button>
+        </div>
+      </main>
     );
   };
 
@@ -785,10 +821,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="space-y-6">
-          {renderCurrentInitiatorQuestion()}
-        </div>
-
         <div className="mt-8 flex flex-col justify-between gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row">
           <div className="text-sm text-slate-500">
             已填答：{session.initiatorAnswers.filter((answer) => answer.trim()).length} / {questions.length}
@@ -946,6 +978,10 @@ export default function HomePage() {
         )}
       </main>
     );
+  }
+
+  if (view === "submission") {
+    return renderSubmissionReview();
   }
 
   if (view === "results") {
