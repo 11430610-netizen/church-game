@@ -176,7 +176,7 @@ function ParticipantCard({
 }
 
 export default function HomePage() {
-  const [view, setView] = useState<"home" | "initiator" | "participant" | "results">("home");
+  const [view, setView] = useState<"role" | "initiator" | "participant" | "results">("role");
   const [selectedRole, setSelectedRole] = useState<"initiator" | "participant" | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [nicknameInput, setNicknameInput] = useState("");
@@ -206,9 +206,9 @@ export default function HomePage() {
             }}
             className="rounded-3xl bg-sky-600 p-6 text-left text-white shadow-lg transition hover:bg-sky-700"
           >
-            <div className="text-sm font-medium uppercase tracking-[0.2em] text-sky-100">發起人</div>
+            <div className="text-sm font-medium uppercase tracking-[0.2em] text-sky-100">發起者</div>
             <div className="mt-4 text-2xl font-bold">建立遊戲</div>
-            <p className="mt-3 text-sm text-sky-100">輸入暱稱、填寫自己的答案，並按開始讓所有人一起作答。</p>
+            <p className="mt-3 text-sm text-sky-100">輸入暱稱，建立遊戲並開始問答。</p>
           </button>
 
           <button
@@ -216,12 +216,13 @@ export default function HomePage() {
             onClick={() => {
               setSelectedRole("participant");
               setView("participant");
+              setAlert("請先輸入暱稱，等待發起者開始遊戲。");
             }}
             className="rounded-3xl bg-violet-600 p-6 text-left text-white shadow-lg transition hover:bg-violet-700"
           >
             <div className="text-sm font-medium uppercase tracking-[0.2em] text-violet-100">玩家</div>
             <div className="mt-4 text-2xl font-bold">加入作答</div>
-            <p className="mt-3 text-sm text-violet-100">輸入自訂暱稱，加入發起人分享的連結後開始作答。</p>
+            <p className="mt-3 text-sm text-violet-100">輸入自訂暱稱後，等待發起者開始遊戲。</p>
           </button>
         </div>
       </div>
@@ -307,7 +308,7 @@ export default function HomePage() {
           return;
         }
 
-        setView("home");
+        setView("role");
         setAlert("已開啟分享連結，但此裝置尚未同步到這個遊戲。請讓發起人先建立連結，或使用雲端同步方案。 ");
       })();
       return;
@@ -320,7 +321,7 @@ export default function HomePage() {
     if (!currentSession) return;
 
     setSession(currentSession);
-    setView("home");
+    setView("role");
   }, []);
 
   const createSession = () => {
@@ -693,70 +694,8 @@ export default function HomePage() {
     );
   };
 
-  if (view === "home") {
-    return (
-      <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#eff6ff,_#f8fafc_45%,_#eef2ff_100%)] px-4 py-10 text-slate-800">
-        <div className="mx-auto max-w-4xl">
-          <div className="mb-8 rounded-3xl border border-sky-100 bg-white/80 p-8 shadow-xl backdrop-blur-sm">
-            <p className="text-sm font-medium uppercase tracking-[0.26em] text-sky-700">團契互動遊戲</p>
-            <h1 className="mt-4 text-4xl font-black text-slate-900">磐石自介</h1>
-            <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-              透過自我介紹與與上帝的連結，讓團契朋友更快認識彼此，也一同學習理解與回應神的恩典。
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-1">
-            {session ? (
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">已建立遊戲</div>
-                    <h3 className="mt-2 text-2xl font-bold text-slate-900">分享連結</h3>
-                    <p className="mt-3 text-sm text-slate-600">請將下方連結傳給團契成員，所有打開連結的人只會看到暱稱輸入頁面。</p>
-                  </div>
-                  <div className="flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={copyShareLink}
-                      className="rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white"
-                    >
-                      複製連結
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-4 break-all rounded-2xl bg-slate-50 px-3 py-3 text-sm text-slate-700">{buildShareUrl(session.sessionId)}</div>
-                <div className="mt-4 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={startQuestionRound}
-                    className="rounded-xl bg-violet-600 px-4 py-3 text-sm font-medium text-white"
-                  >
-                    {session.hasStarted ? "重新開始問答" : "開始問答"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSession(null);
-                    setView("initiator");
-                  }}
-                  className="rounded-3xl bg-sky-600 p-6 text-left text-white shadow-lg transition hover:bg-sky-700"
-                >
-                  <div className="text-sm font-medium uppercase tracking-[0.2em] text-sky-100">建立新遊戲</div>
-                  <div className="mt-4 text-2xl font-bold">建立並產生分享連結</div>
-                  <p className="mt-3 text-sm text-sky-100">點選後會產生分享連結，請使用該連結邀請成員加入。</p>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {alert ? <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{alert}</div> : null}
-        </div>
-      </main>
-    );
+  if (view === "role") {
+    return roleSelectScreen();
   }
 
   if (view === "initiator") {
@@ -857,7 +796,7 @@ export default function HomePage() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => setView("home")}
+              onClick={() => setView("role")}
               className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700"
             >
               返回首頁
@@ -1023,7 +962,7 @@ export default function HomePage() {
           </div>
           <button
             type="button"
-            onClick={() => setView("home")}
+            onClick={() => setView("role")}
             className="rounded-xl bg-white px-4 py-3 text-sm font-medium text-slate-900"
           >
             返回首頁
