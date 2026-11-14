@@ -59,17 +59,13 @@ function buildSessionId() {
 function getShareOrigin() {
   if (typeof window === "undefined") return "";
 
-  const publicOrigin = process.env.NEXT_PUBLIC_APP_URL;
-  if (publicOrigin) {
-    return publicOrigin.replace(/\/$/, "");
-  }
+  const { origin, hostname, protocol, port } = window.location;
 
-  const { hostname, protocol, port } = window.location;
   if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") {
-    return "http://10.170.10.134:3001";
+    return `http://10.170.10.134:3001`;
   }
 
-  return `${protocol}//${hostname}${port ? `:${port}` : ""}`;
+  return origin || `${protocol}//${hostname}${port ? `:${port}` : ""}`;
 }
 
 function buildShareUrl(sessionId: string, session?: Session) {
