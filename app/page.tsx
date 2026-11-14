@@ -144,11 +144,17 @@ function allParticipantsAnsweredCurrentQuestion(session: Session | null, questio
 function ParticipantCard({
   participant,
   onEditName,
+  onDelete,
+  currentQuestionIndex,
 }: {
   participant: Participant;
   onEditName: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+  currentQuestionIndex: number;
 }) {
   const [name, setName] = useState(participant.name);
+  const currentAnswer = participant.answers[currentQuestionIndex] ?? "";
+  const isAnswered = currentAnswer.trim() !== "";
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -168,15 +174,27 @@ function ParticipantCard({
         className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none ring-0 focus:border-sky-500"
         placeholder="輸入暱稱"
       />
-      <div className="mt-3 text-xs text-slate-500">
-        狀態：{participant.completed ? "已完成" : "尚未完成"}
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="text-xs text-slate-500">
+          狀態：{participant.completed ? "已完成" : isAnswered ? "已輸入本題" : "尚未輸入"}
+        </div>
+        <span className={`rounded-full px-2 py-1 text-[10px] font-medium ${isAnswered ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+          {isAnswered ? "已作答" : "未作答"}
+        </span>
       </div>
+      <button
+        type="button"
+        onClick={() => onDelete(participant.id)}
+        className="mt-3 w-full rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-100"
+      >
+        刪除玩家
+      </button>
     </div>
   );
 }
 
 export default function HomePage() {
-  const [view, setView] = useState<"role" | "initiator" | "participant" | "results" | "submission">("role");
+  const [view, setView] = useState<"role" | "initiator" | "participant" | "results" | "submission" | "ended">("role");
   const [selectedRole, setSelectedRole] = useState<"initiator" | "participant" | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [nicknameInput, setNicknameInput] = useState("");
@@ -800,6 +818,13 @@ export default function HomePage() {
                   key={participant.id}
                   participant={participant}
                   onEditName={updateParticipantName}
+                  onDelete={(id) => {
+                    const nextParticipants = session.participants.filter((p) => p.id !== id);
+                    const nextSession = { ...session, participants: nextParticipants };
+                    setSession(nextSession);
+                    saveSession(nextSession);
+                  }}
+                  currentQuestionIndex={session.currentQuestionIndex ?? 0}
                 />
               ))
             )}
@@ -828,33 +853,27 @@ export default function HomePage() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => setView("role")}
-              className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700"
-            >
-              返回首頁
-            </button>
-            <button
-              type="button"
               onClick={startQuestionRound}
               className="rounded-xl bg-violet-600 px-4 py-3 text-sm font-medium text-white"
             >
-              {session.hasStarted ? "重新開始問答" : "開始問答"}
+              開始答題
             </button>
             <button
               type="button"
-              onClick={revealRoundAnswers}
-              disabled={!allAnsweredCurrent()}
-              className="rounded-xl bg-sky-600 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              onClick={advanceToNextQuestion}
+              className="rounded-xl bg-sky-600 px-4 py-3 text-sm font-medium text-white"
             >
-              看所有人答案
+              下一題
             </button>
             <button
               type="button"
-              onClick={openResults}
-              disabled={!getAllParticipantsCompleted()}
-              className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              onClick={() => {
+                setView("ended");
+                setAlert("遊戲已結束。");
+              }}
+              className="rounded-xl bg-rose-600 px-4 py-3 text-sm font-medium text-white"
             >
-              查看最終成績
+              結束遊戲
             </button>
           </div>
         </div>
@@ -976,6 +995,34 @@ export default function HomePage() {
             </div>
           </>
         )}
+      </main>
+    );
+  }
+
+  if (view === "ended") {
+    return (
+      <main className="mx-auto max-w-4xl px-4 py-12 text-slate-800">
+        <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-lg">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-rose-600">遊戲結束</p>
+          <h2 className="mt-3 text-3xl font-bold text-slate-900">本次團契互動已結束</h2>
+          <p className="mt-3 text-sm text-slate-600">可回到首頁重新開始，或查看最後成績。</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setView("results")}
+              className="rounded-xl bg-sky-600 px-4 py-3 text-sm font-medium text-white"
+            >
+              查看最後成績
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("role")}
+              className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700"
+            >
+              返回首頁
+            </button>
+          </div>
+        </div>
       </main>
     );
   }
