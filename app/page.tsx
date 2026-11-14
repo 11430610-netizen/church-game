@@ -536,6 +536,63 @@ export default function HomePage() {
     );
   };
 
+  const renderCurrentInitiatorQuestion = () => {
+    if (!session) return null;
+    const questionIndex = session.currentQuestionIndex ?? 0;
+    const question = questions[questionIndex];
+
+    if (!question) return null;
+
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700">
+            {question.category}
+          </span>
+          <span className="text-xs text-slate-500">Q{questionIndex + 1} / {questions.length}</span>
+        </div>
+        <p className="mb-3 text-sm font-medium leading-6 text-slate-700">{question.question}</p>
+        <textarea
+          value={session.initiatorAnswers[questionIndex] ?? ""}
+          onChange={(event) => updateInitiatorAnswer(questionIndex, event.target.value)}
+          placeholder="請填寫你的答案..."
+          className="min-h-28 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-500 focus:bg-white"
+        />
+        <div className="mt-4 flex justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              if (!session) return;
+              const nextIndex = Math.max((session.currentQuestionIndex ?? 0) - 1, 0);
+              const nextSession = { ...session, currentQuestionIndex: nextIndex };
+              setSession(nextSession);
+              saveSession(nextSession);
+              setShowAnswers(false);
+            }}
+            disabled={(session.currentQuestionIndex ?? 0) === 0}
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            上一題
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!session) return;
+              const nextIndex = Math.min((session.currentQuestionIndex ?? 0) + 1, questions.length - 1);
+              const nextSession = { ...session, currentQuestionIndex: nextIndex };
+              setSession(nextSession);
+              saveSession(nextSession);
+              setShowAnswers(false);
+            }}
+            className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white"
+          >
+            下一題
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderQuestionInputs = (
     answers: string[],
     onChange: (index: number, value: string) => void,
@@ -790,7 +847,7 @@ export default function HomePage() {
         </div>
 
         <div className="space-y-6">
-          {renderQuestionInputs(session.initiatorAnswers, updateInitiatorAnswer)}
+          {renderCurrentInitiatorQuestion()}
         </div>
 
         <div className="mt-8 flex flex-col justify-between gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row">
