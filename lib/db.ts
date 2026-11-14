@@ -1,94 +1,81 @@
-import fs from "node:fs";
-import path from "node:path";
-import sqlite3 from "sqlite3";
+import { createClient } from "@supabase/supabase-js";
 
-sqlite3.verbose();
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
-const dbDirectory = path.join(process.cwd(), "data");
-const dbPath = path.join(dbDirectory, "church-game.db");
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn("Supabase env vars are missing. Session persistence will be unavailable until they are configured.");
+}
 
-export function getDb() {
-  if (!fs.existsSync(dbDirectory)) {
-    fs.mkdirSync(dbDirectory, { recursive: true });
+export function getSupabaseClient() {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return null;
   }
 
-  return new sqlite3.Database(dbPath);
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
 }
 
 export async function initDb() {
-  return new Promise<void>((resolve, reject) => {
-    const db = getDb();
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
 
-    db.serialize(() => {
-      db.run(
-        `CREATE TABLE IF NOT EXISTS sessions (
-          session_id TEXT PRIMARY KEY,
-          payload TEXT NOT NULL,
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )`,
-        (error) => {
-          if (error) {
-            reject(error);
-            db.close();
-            return;
-          }
-
-          db.close(() => resolve());
-        }
-      );
-    });
-  });
+  const { error } = await supabase.from("sessions").select("session_id").limit(1);
+  if (error && error.code !== "PGRST116") {
+    throw error;
+  }
 }
 
 export async function saveSessionRecord(sessionId: string, payload: string) {
-  return new Promise<void>((resolve, reject) => {
-    const db = getDb();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
 
-    db.serialize(() => {
-      db.run(
-        `INSERT INTO sessions (session_id, payload, updated_at)
-         VALUES (?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(session_id) DO UPDATE SET
-           payload = excluded.payload,
-           updated_at = CURRENT_TIMESTAMP`,
-        [sessionId, payload],
-        (error) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
-          }
+  const { error } = await supabase.from("sessions").upsert(
+    {
+      session_id: sessionId,
+      payload,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "session_id" }
+  );
 
-          db.close();
-        }
-      );
-    });
-  });
+  if (error) {
+    throw error;
+  }
 }
 
 export async function getSessionRecord(sessionId: string) {
-  return new Promise<{ sessionId: string; payload: string } | null>((resolve, reject) => {
-    const db = getDb();
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
 
-    db.get(
-      `SELECT session_id AS sessionId, payload FROM sessions WHERE session_id = ?`,
-      [sessionId],
-      (error, row: { sessionId?: string; payload?: string } | undefined) => {
-        db.close();
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("session_id, payload")
+    .eq("session_id", sessionId)
+    .single();
 
-        if (error) {
-          reject(error);
-          return;
-        }
+  if (error) {
+    if (error.code === "PGRST116") {
+      return null;
+    }
+    throw error;
+  }
 
-        if (!row?.sessionId || !row?.payload) {
-          resolve(null);
-          return;
-        }
+  if (!data) {
+    return null;
+  }
 
-        resolve({ sessionId: row.sessionId, payload: row.payload });
-      }
-    );
-  });
+  return {
+    sessionId: data.session_id,
+    payload: data.payload,
+  };
 }
