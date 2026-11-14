@@ -203,6 +203,7 @@ export default function HomePage() {
   const [initiatorName, setInitiatorName] = useState("發起人");
   const [showAnswers, setShowAnswers] = useState(false);
   const [alert, setAlert] = useState("");
+  const [draggingParticipantId, setDraggingParticipantId] = useState<string | null>(null);
 
   const roleSelectScreen = () => (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#eff6ff,_#f8fafc_45%,_#eef2ff_100%)] px-4 py-10 text-slate-800">
@@ -285,9 +286,17 @@ export default function HomePage() {
   useEffect(() => {
     if (!session) return;
 
-    if (session.hasStarted && allAnsweredCurrent()) {
+    if (session.hasStarted && allAnsweredCurrent() && !session.isAnswerRevealOpen) {
+      const nextSession = { ...session, isAnswerRevealOpen: true };
+      setSession(nextSession);
+      saveSession(nextSession);
       setShowAnswers(true);
-      setAlert("所有玩家已完成作答，現在可一起觀看答案。 ");
+      setAlert("所有玩家已完成作答，現在可一起觀看答案並猜測作者。 ");
+      return;
+    }
+
+    if (!session.hasStarted || !allAnsweredCurrent()) {
+      setShowAnswers(false);
     }
 
     saveSession(session);
@@ -350,6 +359,7 @@ export default function HomePage() {
       currentQuestionIndex: 0,
       participants: [],
       hasStarted: false,
+      isAnswerRevealOpen: false,
     };
 
     setSession(nextSession);
@@ -370,6 +380,7 @@ export default function HomePage() {
       ...session,
       hasStarted: true,
       currentQuestionIndex: 0,
+      isAnswerRevealOpen: false,
     };
 
     setSession(nextSession);
@@ -382,7 +393,7 @@ export default function HomePage() {
     if (!session) return;
     const nextIndex = (session.currentQuestionIndex ?? 0) + 1;
     if (nextIndex >= questions.length) {
-      const finished = { ...session, currentQuestionIndex: questions.length - 1 };
+      const finished = { ...session, currentQuestionIndex: questions.length - 1, isAnswerRevealOpen: false };
       setSession(finished);
       saveSession(finished);
       setView("results");
@@ -390,17 +401,11 @@ export default function HomePage() {
       return;
     }
 
-    const nextSession = { ...session, currentQuestionIndex: nextIndex, hasStarted: true };
+    const nextSession = { ...session, currentQuestionIndex: nextIndex, hasStarted: true, isAnswerRevealOpen: false };
     setSession(nextSession);
     saveSession(nextSession);
     setShowAnswers(false);
     setAlert("所有人已作答，現在進入下一題。 ");
-  };
-
-  const revealRoundAnswers = () => {
-    if (!session) return;
-    setShowAnswers(true);
-    setAlert("所有玩家已完成作答，現在可一起觀看答案。 ");
   };
 
   const allAnsweredCurrent = () => {
@@ -409,29 +414,30 @@ export default function HomePage() {
     return session.participants.length > 0 && session.participants.every((p) => (p.answers[idx] ?? "").trim() !== "");
   };
 
-  const getAllParticipantsCompleted = () => {
-    if (!session) return false;
-    return (
-      session.participants.length > 0 &&
-      session.participants.every(participant => participant.answers.every(answer => (answer ?? "").trim() !== ""))
-    );
-  };
-
-  const openResults = () => {
-    if (!session) return;
-    if (!getAllParticipantsCompleted()) {
-      setAlert("請等所有參與者都完成作答後再查看成績。 ");
-      return;
-    }
-    setView("results");
-    setSelectedParticipantId(session.participants[0]?.id ?? "");
-    setAlert("");
+  const getCurrentPlayerGuessMap = (questionIndex: number) => {
+    if (!session || !participantId) return {} as Record<string, string>;
+    const currentPlayer = session.participants.find((item) => item.id === participantId);
+    return currentPlayer?.guessesByQuestion?.[questionIndex] ?? {};
   };
 
   const updateSessionForParticipant = (nextSession: Session) => {
     setSession(nextSession);
     saveSession(nextSession);
     window.localStorage.setItem("church-game-current-session", nextSession.sessionId);
+    void saveSessionToServer(nextSession);
+  };
+
+  const removeParticipant = (id: string) => {
+    if (!session) return;
+
+    const nextParticipants = session.participants.filter((participant) => participant.id !== id);
+    const nextSession = { ...session, participants: nextParticipants };
+    updateSessionForParticipant(nextSession);
+    if (participantId === id) {
+      setParticipantId("");
+      setSelectedParticipantId("");
+      setView("role");
+    }
   };
 
   const copyShareLink = async () => {
@@ -463,6 +469,8 @@ export default function HomePage() {
           name: nicknameInput.trim(),
           answers: createEmptyAnswers(),
           completed: false,
+          guessesByQuestion: {},
+          guessSubmittedByQuestion: {},
         },
       ],
     };
@@ -502,6 +510,8 @@ export default function HomePage() {
           name: nicknameInput.trim(),
           answers: createEmptyAnswers(),
           completed: false,
+          guessesByQuestion: {},
+          guessSubmittedByQuestion: {},
         },
       ],
     };
@@ -538,6 +548,7 @@ export default function HomePage() {
               answers: participant.answers.map((answer, answerIndex) =>
                 answerIndex === index ? value : answer,
               ),
+              completed: true,
             }
           : participant,
       ),
@@ -549,11 +560,84 @@ export default function HomePage() {
   const submitParticipantAnswers = () => {
     if (!session || !participantId) return;
 
-    const nextSession = { ...session };
+    const nextSession = {
+      ...session,
+      participants: session.participants.map((participant) =>
+        participant.id === participantId ? { ...participant, completed: true } : participant,
+      ),
+    };
     updateSessionForParticipant(nextSession);
     setAlert("本題答案已提交，請等待其他玩家。發起人確認後會進入下一題。 ");
     setSelectedParticipantId(participantId);
     setView("submission");
+  };
+
+  const revealRoundAnswers = () => {
+    if (!session) return;
+    const nextSession = { ...session, isAnswerRevealOpen: true };
+    setSession(nextSession);
+    saveSession(nextSession);
+    setShowAnswers(true);
+    setAlert("所有玩家已完成作答，現在可一起觀看答案並猜測作者。 ");
+  };
+
+  const updateGuessForAnswer = (answerOwnerId: string, guessedParticipantId: string) => {
+    if (!session || !participantId || !guessedParticipantId) return;
+
+    const questionIndex = session.currentQuestionIndex ?? 0;
+    const nextSession: Session = {
+      ...session,
+      participants: session.participants.map((participant) => {
+        if (participant.id !== participantId) return participant;
+
+        const previousByQuestion = participant.guessesByQuestion ?? {};
+        const nextGuesses = {
+          ...(previousByQuestion[questionIndex] ?? {}),
+          [answerOwnerId]: guessedParticipantId,
+        };
+
+        return {
+          ...participant,
+          guessesByQuestion: {
+            ...previousByQuestion,
+            [questionIndex]: nextGuesses,
+          },
+        };
+      }),
+    };
+
+    updateSessionForParticipant(nextSession);
+  };
+
+  const submitParticipantGuesses = () => {
+    if (!session || !participantId) return;
+
+    const questionIndex = session.currentQuestionIndex ?? 0;
+    const currentPlayer = session.participants.find((item) => item.id === participantId);
+    const currentGuesses = currentPlayer?.guessesByQuestion?.[questionIndex] ?? {};
+
+    if (Object.keys(currentGuesses).length !== session.participants.length) {
+      setAlert("請把每個答案都拖曳一個名字後再提交猜測。 ");
+      return;
+    }
+
+    const nextSession: Session = {
+      ...session,
+      participants: session.participants.map((participant) => {
+        if (participant.id !== participantId) return participant;
+        return {
+          ...participant,
+          guessSubmittedByQuestion: {
+            ...(participant.guessSubmittedByQuestion ?? {}),
+            [questionIndex]: true,
+          },
+        };
+      }),
+    };
+
+    updateSessionForParticipant(nextSession);
+    setAlert("這題猜測已提交，請等待下一題或查看結果。 ");
+    setView("participant");
   };
 
   const renderSubmissionReview = () => {
@@ -748,6 +832,132 @@ export default function HomePage() {
     );
   };
 
+  const renderGuessBoard = () => {
+    if (!session || !participantId) return null;
+
+    const questionIndex = session.currentQuestionIndex ?? 0;
+    const currentPlayer = session.participants.find((item) => item.id === participantId);
+    const guesses = currentPlayer?.guessesByQuestion?.[questionIndex] ?? {};
+    const answerEntries = session.participants.map((participant) => ({
+      id: participant.id,
+      name: participant.name,
+      answer: participant.answers[questionIndex] ?? "",
+    }));
+
+    const handleDrop = (answerOwnerId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (!draggingParticipantId) return;
+      updateGuessForAnswer(answerOwnerId, draggingParticipantId);
+      setDraggingParticipantId(null);
+    };
+
+    return (
+      <div className="space-y-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold text-slate-800">猜猜答案是誰寫的</h3>
+          <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700">
+            每個答案都要拖到一個人
+          </span>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
+          <div className="space-y-3">
+            {answerEntries.map((entry) => (
+              <div
+                key={entry.id}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={handleDrop(entry.id)}
+                className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4"
+              >
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">答案：{entry.name}</span>
+                  <span className="text-xs text-slate-500">{entry.answer ? "已作答" : "未作答"}</span>
+                </div>
+                <div className="min-h-[88px] rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                  {entry.answer || "(未填寫)"}
+                </div>
+                <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
+                  {guesses[entry.id] ? `已猜：${session.participants.find((p) => p.id === guesses[entry.id])?.name || "未知"}` : "拖曳一個名字到這裡"}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 text-sm font-medium text-slate-700">名字池</div>
+            <div className="flex flex-wrap gap-3">
+              {session.participants.map((participant) => {
+                const isUsed = Object.values(guesses).includes(participant.id);
+                return (
+                  <button
+                    key={participant.id}
+                    type="button"
+                    draggable
+                    onDragStart={() => setDraggingParticipantId(participant.id)}
+                    onDragEnd={() => setDraggingParticipantId(null)}
+                    className={`flex h-16 w-16 items-center justify-center rounded-full border text-xs font-medium shadow-sm transition ${
+                      isUsed ? "border-violet-300 bg-violet-100 text-violet-700 opacity-60" : "border-sky-200 bg-white text-slate-700 hover:border-sky-300"
+                    }`}
+                  >
+                    {participant.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={submitParticipantGuesses}
+            className="rounded-xl bg-violet-600 px-4 py-3 text-sm font-medium text-white"
+          >
+            提交猜測
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderParticipantAnswerReveal = () => {
+    if (!session || !participantId) return null;
+
+    const questionIndex = session.currentQuestionIndex ?? 0;
+    const answers = session.participants.map((participant) => ({
+      id: participant.id,
+      name: participant.name,
+      answer: participant.answers[questionIndex] ?? "",
+    }));
+
+    return (
+      <main className="mx-auto max-w-6xl px-4 py-8 text-slate-800">
+        <div className="mb-6 rounded-3xl bg-slate-900 p-6 text-white shadow-lg">
+          <p className="text-sm uppercase tracking-[0.2em] text-slate-300">本題答案揭曉</p>
+          <h2 className="mt-3 text-3xl font-bold">請把名字拖到正確的答案上</h2>
+          <p className="mt-2 text-sm text-slate-300">你要猜哪個答案是誰寫的，請將名字拖到答案卡片上。</p>
+        </div>
+
+        {renderGuessBoard()}
+
+        <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="text-lg font-semibold text-slate-800">答案列表</h3>
+          <div className="mt-4 space-y-3">
+            {answers.map((item) => (
+              <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-medium text-slate-700">{item.name}</div>
+                  <div className="text-xs text-slate-500">{item.answer ? "已作答" : "未作答"}</div>
+                </div>
+                <div className="mt-2 text-sm text-slate-700">{item.answer || "(未填寫)"}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
+    );
+  };
+
   if (view === "role") {
     return roleSelectScreen();
   }
@@ -938,6 +1148,11 @@ export default function HomePage() {
     }
 
     const roundStarted = !!session.hasStarted;
+    const shouldRevealGuessingBoard = session.isAnswerRevealOpen && roundStarted;
+
+    if (shouldRevealGuessingBoard) {
+      return renderParticipantAnswerReveal();
+    }
 
     return (
       <main className="mx-auto max-w-5xl px-4 py-8 text-slate-800">

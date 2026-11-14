@@ -17,6 +17,8 @@ export type Participant = {
   name: string;
   answers: string[];
   completed: boolean;
+  guessesByQuestion?: Record<number, Record<string, string>>;
+  guessSubmittedByQuestion?: Record<number, boolean>;
 };
 
 export type Session = {
@@ -26,6 +28,7 @@ export type Session = {
   participants: Participant[];
   currentQuestionIndex: number;
   hasStarted?: boolean;
+  isAnswerRevealOpen?: boolean;
 };
 
 export const questions: Question[] = [
