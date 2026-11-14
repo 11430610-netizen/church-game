@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { buildReview, createEmptyAnswers, questions, type Participant, type Session } from "@/lib/game";
+import { buildReview, calculateGuessLeaderboard, calculateQuestionGuessStats, createEmptyAnswers, questions, type Participant, type Session } from "@/lib/game";
 
 const DB_SESSION_PREFIX = "church-game-session-v1";
 
@@ -289,7 +289,7 @@ export default function HomePage() {
     if (session.hasStarted && allAnsweredCurrent() && !session.isAnswerRevealOpen) {
       const nextSession = { ...session, isAnswerRevealOpen: true };
       setSession(nextSession);
-      saveSession(nextSession);
+      saveSessionToServer(nextSession);
       setShowAnswers(true);
       setAlert("所有玩家已完成作答，現在可一起觀看答案並猜測作者。 ");
       return;
@@ -828,6 +828,18 @@ export default function HomePage() {
             </div>
           ))}
         </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="mb-4 text-lg font-semibold text-slate-800">猜測得分</h3>
+          <div className="space-y-3">
+            {calculateGuessLeaderboard(session).map((participant) => (
+              <div key={participant.participantId} className="flex items-center justify-between text-sm text-slate-700">
+                <span>{participant.participantName}</span>
+                <span className="font-medium text-sky-600">{participant.totalScore} 分</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   };
@@ -955,6 +967,41 @@ export default function HomePage() {
           </div>
         </div>
       </main>
+    );
+  };
+
+  const renderGuessRoundSummary = () => {
+    if (!session) return null;
+
+    const questionIndex = session.currentQuestionIndex ?? 0;
+    const stats = calculateQuestionGuessStats(session, questionIndex);
+
+    return (
+      <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="text-lg font-semibold text-slate-800">本題猜題統計</h3>
+        <div className="mt-4 space-y-4">
+          {stats.map((item) => (
+            <div key={item.answerOwnerId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-medium text-slate-700">{item.answerOwnerName}</div>
+                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                  猜中 {item.totalCorrect} 人
+                </span>
+              </div>
+              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                {item.answer || "(未填寫)"}
+              </div>
+              <div className="mt-3 text-xs text-slate-600">
+                {item.correctGuessers.length > 0 ? (
+                  <span>猜對的人：{item.correctGuessers.map((guess) => guess.name).join("、")}</span>
+                ) : (
+                  <span>目前沒有玩家猜中</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     );
   };
 
@@ -1088,29 +1135,32 @@ export default function HomePage() {
           </div>
         </div>
         {showAnswers && session ? (
-          <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-800">本題所有答案</h3>
-            <div className="mt-4 space-y-3">
-              {buildRoundReviewData(session).map((item) => (
-                <div key={item.id} className="rounded-xl border border-slate-100 p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="font-medium text-slate-700">{item.name}</div>
-                    <div className="text-sm text-slate-500">{item.answer ? "已作答" : "未作答"}</div>
+          <>
+            <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-semibold text-slate-800">本題所有答案</h3>
+              <div className="mt-4 space-y-3">
+                {buildRoundReviewData(session).map((item) => (
+                  <div key={item.id} className="rounded-xl border border-slate-100 p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="font-medium text-slate-700">{item.name}</div>
+                      <div className="text-sm text-slate-500">{item.answer ? "已作答" : "未作答"}</div>
+                    </div>
+                    <div className="mt-2 text-sm text-slate-700">{item.answer || "(未填寫)"}</div>
                   </div>
-                  <div className="mt-2 text-sm text-slate-700">{item.answer || "(未填寫)"}</div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={advanceToNextQuestion}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
+                >
+                  {session.currentQuestionIndex >= questions.length - 1 ? "查看最終成績" : "下一題"}
+                </button>
+              </div>
             </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={advanceToNextQuestion}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
-              >
-                {session.currentQuestionIndex >= questions.length - 1 ? "查看最終成績" : "下一題"}
-              </button>
-            </div>
-          </div>
+            {renderGuessRoundSummary()}
+          </>
         ) : null}
       </main>
     );

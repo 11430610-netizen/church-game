@@ -31,6 +31,26 @@ export type Session = {
   isAnswerRevealOpen?: boolean;
 };
 
+export type GuessQuestionBreakdown = {
+  questionIndex: number;
+  totalCorrect: number;
+  totalGuesses: number;
+  entries: Array<{
+    answerOwnerId: string;
+    answerOwnerName: string;
+    guessedParticipantId: string;
+    guessedParticipantName: string;
+    correct: boolean;
+  }>;
+};
+
+export type GuessScoreSummary = {
+  participantId: string;
+  participantName: string;
+  totalScore: number;
+  byQuestion: GuessQuestionBreakdown[];
+};
+
 export const questions: Question[] = [
   { id: 1, category: "飲食類", question: "飲料都點幾分糖？" },
   { id: 2, category: "飲食類", question: "飲料要喝有料還是沒料？" },
@@ -106,4 +126,80 @@ export function buildReview(initiatorAnswers: string[], participantAnswers: stri
 
 export function createEmptyAnswers() {
   return Array.from({ length: questions.length }, () => "");
+}
+
+export function calculateQuestionGuessStats(session: Session, questionIndex: number) {
+  const answerOwners = session.participants.map((participant) => ({
+    id: participant.id,
+    name: participant.name,
+    answer: participant.answers[questionIndex] ?? "",
+  }));
+
+  return answerOwners.map((owner) => {
+    const correctGuessers = session.participants.filter((participant) => {
+      const guessed = participant.guessesByQuestion?.[questionIndex]?.[owner.id];
+      return guessed === owner.id;
+    });
+
+    return {
+      answerOwnerId: owner.id,
+      answerOwnerName: owner.name,
+      answer: owner.answer,
+      correctGuessers: correctGuessers.map((participant) => ({
+        id: participant.id,
+        name: participant.name,
+      })),
+      totalCorrect: correctGuessers.length,
+    };
+  });
+}
+
+export function calculateGuessScoreForParticipant(session: Session, participantId: string): GuessQuestionBreakdown[] {
+  const participant = session.participants.find((item) => item.id === participantId);
+  if (!participant) {
+    return [];
+  }
+
+  return session.participants
+    .map((_, questionIndex) => {
+      const guesses = participant.guessesByQuestion?.[questionIndex] ?? {};
+      const entries = session.participants.map((owner) => {
+        const guessedParticipantId = guesses[owner.id] ?? "";
+        const guessedParticipant = session.participants.find((item) => item.id === guessedParticipantId);
+
+        return {
+          answerOwnerId: owner.id,
+          answerOwnerName: owner.name,
+          guessedParticipantId,
+          guessedParticipantName: guessedParticipant?.name ?? "未猜測",
+          correct: guessedParticipantId === owner.id,
+        };
+      });
+
+      const totalCorrect = entries.filter((entry) => entry.correct).length;
+
+      return {
+        questionIndex,
+        totalCorrect,
+        totalGuesses: entries.length,
+        entries,
+      };
+    })
+    .filter((question) => question.totalGuesses > 0);
+}
+
+export function calculateGuessLeaderboard(session: Session): GuessScoreSummary[] {
+  return session.participants
+    .map((participant) => {
+      const byQuestion = calculateGuessScoreForParticipant(session, participant.id);
+      const totalScore = byQuestion.reduce((sum, question) => sum + question.totalCorrect, 0);
+
+      return {
+        participantId: participant.id,
+        participantName: participant.name,
+        totalScore,
+        byQuestion,
+      };
+    })
+    .sort((a, b) => b.totalScore - a.totalScore);
 }
