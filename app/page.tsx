@@ -265,6 +265,12 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!session) return;
+
+    if (session.hasStarted && allAnsweredCurrent()) {
+      setShowAnswers(true);
+      setAlert("所有玩家已完成作答，現在可一起觀看答案。 ");
+    }
+
     saveSession(session);
     saveSessionToServer(session);
   }, [session]);
@@ -335,7 +341,7 @@ export default function HomePage() {
     } catch (e) {
       // ignore
     }
-    setView("home");
+    setView("initiator");
   };
 
   const startQuestionRound = () => {
